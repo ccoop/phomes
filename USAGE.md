@@ -85,9 +85,9 @@ mla serve --host 127.0.0.1 --port 8080
 
 ### Model Registry & Management
 
-#### View Registry Status
+#### List Models
 ```bash
-mla registry
+mla models list
 ```
 Shows experiment registry with:
 - All experiments ranked by performance
@@ -95,16 +95,28 @@ Shows experiment registry with:
 - Best performing model (⭐)
 - Key metrics (MAPE, accuracy within 15%, MAE)
 
+#### Show Model Details
+```bash
+# Show specific experiment details
+mla models show gradient_boost_20250813_170200
+
+# Show production model details
+mla models show prod
+
+# Show best model details
+mla models show best
+```
+
 #### Compare Experiments
 ```bash
-mla compare gradient_boost_20250813_170200 random_forest_20250813_170233
+mla models compare gradient_boost_20250813_170200 random_forest_20250813_170233
 ```
 Side-by-side comparison of model performance metrics.
 
 #### Promote to Production
 ```bash
 # Promote with metric gated validation
-mla promote gradient_boost_20250813_170200
+mla models promote gradient_boost_20250813_170200
 
 ```
 
@@ -122,12 +134,12 @@ mla data snapshot --note "Clean dataset for baseline experiments"
 mla train --all --note "Initial baseline experiments"
 
 # 3. View results and rankings
-mla registry
+mla models list
 
 # 4. Compare best models (use actual experiment IDs from registry)
-mla compare <experiment_id_1> <experiment_id_2>
+mla models compare <experiment_id_1> <experiment_id_2>
 
 # 5. Promote best model to production
-mla promote <best_experiment_id>
+mla models promote <best_experiment_id>
 
 ```

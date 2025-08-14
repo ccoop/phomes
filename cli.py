@@ -164,60 +164,21 @@ def data_cmd(args):
                 print()
 
 
-def list_cmd(args):
-    """Handle the list command"""
-    print("Available Experiments:")
-    print("=" * 50)
-    registry.list()
+def models_cmd(args):
+    """Handle the models command"""
+    match args.models_command:
+        case "list":
+            models_list_cmd(args)
+        case "show":
+            models_show_cmd(args)
+        case "compare":
+            models_compare_cmd(args)
+        case "promote":
+            models_promote_cmd(args)
 
 
-def compare_cmd(args):
-    """Handle the compare command"""
-    if len(args.experiments) < 2:
-        print("Please provide at least 2 experiment IDs to compare")
-        return
-
-    print(f"Comparing experiments: {', '.join(args.experiments)}")
-
-    try:
-        df = registry.compare(args.experiments)
-        print("\nComparison:")
-        print(df.to_string(index=False))
-    except Exception as e:
-        print(f"Error comparing experiments: {e}")
-
-
-def promote_cmd(args):
-    """Handle the promote command"""
-    try:
-        result = registry.promote_to_production(args.experiment_id, force=args.force)
-
-        print(f"Promotion Report for {args.experiment_id}:")
-        print("=" * 50)
-
-        if result["promoted"]:
-            print("✅ Model promoted to production!")
-            if result["forced"]:
-                print("⚠️  Promotion was forced (quality gates may have failed)")
-        else:
-            print("❌ Promotion failed - quality gates not met")
-
-        print("\nQuality Gates:")
-        for gate, passed in result["gate_results"].items():
-            status = "✅" if passed else "❌"
-            print(f"  {gate}: {status}")
-
-        if not result["gates_passed"] and not args.force:
-            print("\nUse --force to override quality gates")
-
-        print(f"\nTimestamp: {result['timestamp']}")
-
-    except ValueError as e:
-        print(f"Error: {e}")
-
-
-def registry_cmd(args):
-    """Handle the registry command"""
+def models_list_cmd(args):
+    """Handle the models list command"""
     registry_data = registry.load_registry()
 
     if not registry_data["experiments"]:
@@ -282,6 +243,102 @@ def registry_cmd(args):
         print(f"{rank:<4} | {exp['id']:<35} | {prod_status:<4} | {data_v:<4} | {date} | {mape_str:<6} | {acc_str:<7} | {mae_str:<8}")
 
 
+def models_show_cmd(args):
+    """Handle the models show command"""
+    target = args.target
+    
+    registry_data = registry.load_registry()
+    
+    if target == "prod":
+        if not registry_data.get("production_model"):
+            print("No production model set")
+            return
+        experiment_id = registry_data["production_model"]["id"]
+    elif target == "best":
+        if not registry_data.get("best_model"):
+            print("No best model found")
+            return
+        experiment_id = registry_data["best_model"]["id"]
+    else:
+        experiment_id = target
+    
+    try:
+        metadata = registry.get_experiment_metadata(experiment_id)
+        
+        print(f"Experiment Details: {experiment_id}")
+        print("=" * 60)
+        print(f"Name: {metadata['name']}")
+        print(f"Description: {metadata.get('description', 'N/A')}")
+        print(f"Created: {metadata['created_at'].split('T')[0]}")
+        print(f"Data Version: {metadata.get('data_version', 'N/A')}")
+        print(f"Features: {metadata['features']['count']}")
+        
+        if metadata.get('parameters'):
+            print(f"\nParameters:")
+            for key, value in metadata['parameters'].items():
+                print(f"  {key}: {value}")
+        
+        print(f"\nMetrics:")
+        test_metrics = metadata['metrics']['test']
+        print(f"  MAPE: {test_metrics.get('mape', 'N/A'):.1f}%" if test_metrics.get('mape') is not None else "  MAPE: N/A")
+        print(f"  Accuracy within 15%: {test_metrics.get('accuracy_within_15pct', 'N/A'):.1f}%" if test_metrics.get('accuracy_within_15pct') is not None else "  Accuracy within 15%: N/A")
+        print(f"  MAE: ${test_metrics.get('mae', 'N/A'):,.0f}" if test_metrics.get('mae') is not None else "  MAE: N/A")
+        print(f"  R²: {test_metrics.get('r2', 'N/A'):.3f}" if test_metrics.get('r2') is not None else "  R²: N/A")
+        
+        if test_metrics.get('prediction_latency_ms') is not None:
+            print(f"  Prediction Latency: {test_metrics['prediction_latency_ms']:.2f}ms")
+            
+    except ValueError as e:
+        print(f"Error: {e}")
+
+
+def models_compare_cmd(args):
+    """Handle the models compare command"""
+    if len(args.experiments) < 2:
+        print("Please provide at least 2 experiment IDs to compare")
+        return
+
+    print(f"Comparing experiments: {', '.join(args.experiments)}")
+
+    try:
+        df = registry.compare(args.experiments)
+        print("\nComparison:")
+        print(df.to_string(index=False))
+    except Exception as e:
+        print(f"Error comparing experiments: {e}")
+
+
+def models_promote_cmd(args):
+    """Handle the models promote command"""
+    try:
+        result = registry.promote_to_production(args.experiment_id, force=args.force)
+
+        print(f"Promotion Report for {args.experiment_id}:")
+        print("=" * 50)
+
+        if result["promoted"]:
+            print("✅ Model promoted to production!")
+            if result["forced"]:
+                print("⚠️  Promotion was forced (quality gates may have failed)")
+        else:
+            print("❌ Promotion failed - quality gates not met")
+
+        print("\nQuality Gates:")
+        for gate, passed in result["gate_results"].items():
+            status = "✅" if passed else "❌"
+            print(f"  {gate}: {status}")
+
+        if not result["gates_passed"] and not args.force:
+            print("\nUse --force to override quality gates")
+
+        print(f"\nTimestamp: {result['timestamp']}")
+
+    except ValueError as e:
+        print(f"Error: {e}")
+
+
+
+
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(description="ML Experiment CLI")
@@ -294,16 +351,20 @@ def main():
     train_parser.add_argument("--note", help="Note about this experiment")
     train_parser.add_argument("--data", help="Specific data version to use (e.g., v1)")
 
-    list_parser = subparsers.add_parser("list", help="List available models")
+    models_parser = subparsers.add_parser("models", help="Model management commands")
+    models_subparsers = models_parser.add_subparsers(dest="models_command", help="Models commands")
 
-    compare_parser = subparsers.add_parser("compare", help="Compare experiments")
-    compare_parser.add_argument("experiments", nargs="+", help="Experiment IDs to compare")
+    models_list_parser = models_subparsers.add_parser("list", help="List all experiments")
 
-    registry_parser = subparsers.add_parser("registry", help="Show experiment registry")
+    models_show_parser = models_subparsers.add_parser("show", help="Show experiment details")
+    models_show_parser.add_argument("target", help="Experiment ID, 'prod', or 'best'")
 
-    promote_parser = subparsers.add_parser("promote", help="Promote model to production")
-    promote_parser.add_argument("experiment_id", help="Experiment ID to promote")
-    promote_parser.add_argument("--force", action="store_true", help="Force promotion despite quality gate failures")
+    models_compare_parser = models_subparsers.add_parser("compare", help="Compare experiments")
+    models_compare_parser.add_argument("experiments", nargs="+", help="Experiment IDs to compare")
+
+    models_promote_parser = models_subparsers.add_parser("promote", help="Promote model to production")
+    models_promote_parser.add_argument("experiment_id", help="Experiment ID to promote")
+    models_promote_parser.add_argument("--force", action="store_true", help="Force promotion despite quality gate failures")
 
     serve_parser = subparsers.add_parser("serve", help="Start API server")
     serve_parser.add_argument("--host", default="0.0.0.0", help="Host to bind (default: 0.0.0.0)")
@@ -326,14 +387,8 @@ def main():
     match args.command:
         case "train":
             train_cmd(args)
-        case "list":
-            list_cmd(args)
-        case "compare":
-            compare_cmd(args)
-        case "registry":
-            registry_cmd(args)
-        case "promote":
-            promote_cmd(args)
+        case "models":
+            models_cmd(args)
         case "serve":
             serve_cmd(args)
         case "data":
