@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "phdata-homes"
+version = "0.1.0"
+description = "ML API for home price prediction"
+authors = [
+    {name = "Chadwicke Cooper"}
+]
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.104.0",
+    "pydantic>=2.5.0",
+    "pandas==2.1.1",
+    "scikit-learn==1.3.1",
+    "numpy>=1.24.0",
+    "uvicorn>=0.35.0",
+    "requests>=2.32.4",
+]
+
+[project.scripts]
+mla = "cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
