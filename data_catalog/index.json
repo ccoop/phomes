@@ -1,6 +1,6 @@
 {
-  "current": "v3",
-  "next_id": 4,
+  "current": "v4",
+  "next_id": 5,
   "versions": {
     "v1": {
       "created": "2025-08-13T17:00:43.473716",
@@ -19,6 +19,12 @@
       "samples": 21613,
       "features": 44,
       "description": "Test simplified storage"
+    },
+    "v4": {
+      "created": "2025-08-14T13:47:30.371200",
+      "samples": 21613,
+      "features": 43,
+      "description": "Clean data without id field"
     }
   }
 }

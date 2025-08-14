@@ -1,7 +1,3 @@
-"""
-Data versioning and catalog management for ML.
-"""
-
 import hashlib
 import json
 import logging
@@ -9,24 +5,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
+import config
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, validator
 from sklearn.model_selection import train_test_split
-import config
 
 logger = logging.getLogger(__name__)
 
 
 class HomeSale(BaseModel):
     """Pydantic model for validating house sale data."""
+
     id: int = Field(gt=0, description="Unique house ID")
     date: str = Field(description="Sale date")
     price: float = Field(gt=0, lt=50_000_000, description="Sale price")
-    bedrooms: int = Field(ge=0, le=20, description="Number of bedrooms")
+    bedrooms: int = Field(ge=0, description="Number of bedrooms")
     bathrooms: float = Field(ge=0, le=10, description="Number of bathrooms")
     sqft_living: int = Field(gt=0, le=50_000, description="Living space square footage")
-    sqft_lot: int = Field(gt=0, le=1_000_000, description="Lot square footage")
+    sqft_lot: int = Field(gt=0, description="Lot square footage")
     floors: float = Field(ge=1, le=10, description="Number of floors")
     waterfront: int = Field(ge=0, le=1, description="Waterfront property (0 or 1)")
     view: int = Field(ge=0, le=4, description="View rating")
@@ -52,6 +49,7 @@ class HomeSale(BaseModel):
 
 class ZipcodeDemographics(BaseModel):
     """Pydantic model for validating zipcode demographic data."""
+
     ppltn_qty: int = Field(ge=0, description="Total population")
     urbn_ppltn_qty: int = Field(ge=0, description="Urban population")
     sbrbn_ppltn_qty: int = Field(ge=0, description="Suburban population")
@@ -79,6 +77,13 @@ class ZipcodeDemographics(BaseModel):
     per_bchlr: float = Field(ge=0, le=100, description="Percent bachelor's degree")
     per_prfsnl: float = Field(ge=0, le=100, description="Percent professional degree")
     zipcode: str = Field(min_length=5, max_length=5, description="Zipcode")
+    
+    @validator('ppltn_qty', 'urbn_ppltn_qty', 'sbrbn_ppltn_qty', 'farm_ppltn_qty', 'non_farm_qty',
+               'edctn_less_than_9_qty', 'edctn_9_12_qty', 'edctn_high_schl_qty', 'edctn_some_clg_qty',
+               'edctn_assoc_dgre_qty', 'edctn_bchlr_dgre_qty', 'edctn_prfsnl_qty', pre=True)
+    def round_counts(cls, v):
+        """Round fractional population/education counts to integers."""
+        return int(round(float(v))) if v is not None else v
 
 
 class DataCatalog:
@@ -104,7 +109,7 @@ class DataCatalog:
         """Validate DataFrame rows using Pydantic model."""
         validated_records = []
         invalid_count = 0
-        
+
         for idx, row in df.iterrows():
             try:
                 validated_record = model_class(**row.to_dict())
@@ -112,23 +117,24 @@ class DataCatalog:
             except Exception as e:
                 logger.warning(f"Invalid {model_class.__name__} record at row {idx}: {e}")
                 invalid_count += 1
-        
+
         logger.info(f"Validated {len(validated_records)} {model_class.__name__} records, rejected {invalid_count}")
         return pd.DataFrame(validated_records)
 
     def _default_data_loader(self) -> Tuple[pd.DataFrame, pd.Series]:
         """Default data loading logic for housing data with Pydantic validation."""
-        sales_raw = pd.read_csv(config.DATA_SOURCES["sales_path"], dtype={"zipcode": str})
-        demographics_raw = pd.read_csv(config.DATA_SOURCES["demographics_path"], dtype={"zipcode": str})
-        
-        sales = self._validate_dataframe(sales_raw, HomeSale)
-        demographics = self._validate_dataframe(demographics_raw, ZipcodeDemographics)
+        sales = self.load_source("sales", validate=True)
+        demographics = self.load_source("demographics", validate=True)
 
         merged = sales.merge(demographics, how="left", on="zipcode")
         merged = merged.drop(columns="zipcode").dropna()
 
         y = merged.pop("price")
         X = merged.select_dtypes(include=[np.number])
+
+        # Remove id field - it's not a useful feature
+        if "id" in X.columns:
+            X = X.drop(columns=["id"])
 
         return X, y
 
@@ -252,6 +258,38 @@ class DataCatalog:
 
         return sources
 
+    def load_source(self, source_name: str, validate: bool = True) -> pd.DataFrame:
+        """Load and optionally validate a data source by name.
+        
+        Args:
+            source_name: Name of source ('sales', 'demographics', 'future_unseen_examples')
+            validate: Whether to apply Pydantic validation
+            
+        Returns:
+            Validated DataFrame with consistent dtypes
+        """
+        # Map source names to file paths and validation models
+        source_config = {
+            "sales": {"path_key": "sales_path", "model": HomeSale},
+            "demographics": {"path_key": "demographics_path", "model": ZipcodeDemographics},
+            "future_unseen_examples": {"path_key": "future_unseen_examples_path", "model": None}
+        }
+        
+        if source_name not in source_config:
+            raise ValueError(f"Unknown source: {source_name}. Available: {list(source_config.keys())}")
+        
+        config_info = source_config[source_name]
+        file_path = config.DATA_SOURCES[config_info["path_key"]]
+        
+        # Load with consistent dtypes (zipcode as string)
+        df = pd.read_csv(file_path, dtype={"zipcode": str})
+        
+        # Apply validation if requested and model available
+        if validate and config_info["model"]:
+            df = self._validate_dataframe(df, config_info["model"])
+            
+        return df
+
     def _calculate_fingerprint(self, X: pd.DataFrame, y: pd.Series) -> str:
         """Calculate a fingerprint for the dataset."""
         fingerprint_data = {
@@ -274,7 +312,6 @@ def load_housing_data() -> Tuple[pd.DataFrame, pd.Series]:
 
     merged = sales.merge(demographics, how="left", on="zipcode")
     merged = merged.drop(columns="zipcode").dropna()
-
     y = merged.pop("price")
     X = merged.select_dtypes(include=[np.number])
 

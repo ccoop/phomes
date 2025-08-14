@@ -7,7 +7,8 @@ DATA_CATALOG_DIR = "data_catalog"
 
 DATA_SOURCES = {
     "sales_path": "data_catalog/sources/kc_house_data.csv",
-    "demographics_path": "data_catalog/sources/zipcode_demographics.csv"
+    "demographics_path": "data_catalog/sources/zipcode_demographics.csv",
+    "future_unseen_examples_path": "data_catalog/sources/future_unseen_examples.csv"
 }
 
 DATA_SPLIT = {

@@ -1,19 +1,9 @@
 #!/usr/bin/env python3
-"""
-CLI interface for the ML experiment system.
-"""
 
 import argparse
-from pathlib import Path
 
-import models
-import numpy as np
-import pandas as pd
-from sklearn.model_selection import train_test_split
 import config
 from shared import catalog, registry
-
-
 
 
 def parse_params(param_strings):
@@ -42,12 +32,12 @@ def parse_params(param_strings):
 
 def train_cmd(args):
     """Handle the train command"""
-    # Validate arguments
+
     if not args.all and not args.model:
         print("Error: Must specify either a model name or --all")
         print("Available models:", list(registry.experiments.keys()))
         return
-    
+
     # Determine which models to train
     if args.all:
         models_to_train = list(registry.experiments.keys())
@@ -61,8 +51,7 @@ def train_cmd(args):
 
     params = parse_params(args.params)
     data_version = getattr(args, 'data', None)
-    
-    # Load data once
+
     print("Loading data...")
     X_train, y_train, X_val, y_val, X_test, y_test, version_id = \
         catalog.load_version(data_version)
@@ -70,13 +59,12 @@ def train_cmd(args):
     print(f"Data loaded: Train {len(X_train)}, Val {len(X_val)}, Test {len(X_test)} samples")
     print(f"Features: {X_train.shape[1]} | Data version: {version_id}")
 
-    # Train each model
     for i, model_name in enumerate(models_to_train, 1):
         if len(models_to_train) > 1:
             print(f"\n{'=' * 60}")
             print(f"Training model {i}/{len(models_to_train)}: {model_name}")
             print(f"{'=' * 60}")
-        
+
         print(f"Creating experiment: {model_name}")
         if params:
             print(f"Parameters: {params}")
@@ -95,8 +83,17 @@ def train_cmd(args):
         print(f"\nExperiment Complete: {results['id']}")
         print(f"Description: {results['description']}")
 
-        from eval import format_metrics_for_display
-        print(f"\n{format_metrics_for_display(results['metrics'])}")
+        metrics = results['metrics']
+        mape = metrics.get('mape')
+        acc15 = metrics.get('accuracy_within_15pct')
+        mae = metrics.get('mae')
+        r2 = metrics.get('r2')
+
+        print(f"\n📊 Performance:")
+        print(f"  MAPE: {mape:.1f}%" if mape is not None else "  MAPE: N/A")
+        print(f"  Accuracy within 15%: {acc15:.1f}%" if acc15 is not None else "  Accuracy within 15%: N/A")
+        print(f"  MAE: ${mae:,.0f}" if mae is not None else "  MAE: N/A")
+        print(f"  R²: {r2:.3f}" if r2 is not None else "  R²: N/A")
 
         print(f"\n💾 Data:")
         print(f"  Features: {results['features']['count']}")
@@ -111,16 +108,16 @@ def serve_cmd(args):
     """Handle the serve command"""
     import subprocess
     import sys
-    
+
     host = getattr(args, 'host', '0.0.0.0')
     port = getattr(args, 'port', 8000)
-    
+
     print(f"Starting API server on {host}:{port}")
     print("Press Ctrl+C to stop the server")
-    
+
     try:
         subprocess.run([
-            sys.executable, "-m", "uvicorn", "api:app", 
+            sys.executable, "-m", "uvicorn", "api:app",
             "--host", host, "--port", str(port), "--reload"
         ])
     except KeyboardInterrupt:
@@ -133,7 +130,7 @@ def data_cmd(args):
         case "snapshot":
             note = getattr(args, 'note', '')
             version_id = catalog.snapshot(note)
-            
+
             versions = catalog.list_versions()
             meta = versions[version_id]
             print(f"Created data version: {version_id}")
@@ -141,24 +138,24 @@ def data_cmd(args):
             print(f"  Features: {meta['features']}")
             if note:
                 print(f"  Description: {note}")
-        
+
         case "list":
             versions = catalog.list_versions()
-            
+
             if not versions:
                 print("No data versions found. Use 'data snapshot' to create one.")
                 return
-            
+
             current = catalog.get_current_version()
-            
+
             print("Data Versions:")
             print("-" * 60)
-            
+
             for vid in sorted(versions.keys()):
                 meta = versions[vid]
                 is_current = " (current)" if vid == current else ""
                 created = meta["created"].split("T")[0]
-                
+
                 print(f"{vid}{is_current}")
                 print(f"  Created: {created}")
                 if meta.get("description"):
@@ -194,27 +191,27 @@ def promote_cmd(args):
     """Handle the promote command"""
     try:
         result = registry.promote_to_production(args.experiment_id, force=args.force)
-        
+
         print(f"Promotion Report for {args.experiment_id}:")
         print("=" * 50)
-        
+
         if result["promoted"]:
             print("✅ Model promoted to production!")
             if result["forced"]:
                 print("⚠️  Promotion was forced (quality gates may have failed)")
         else:
             print("❌ Promotion failed - quality gates not met")
-        
-        print(f"\nQuality Gates:")
+
+        print("\nQuality Gates:")
         for gate, passed in result["gate_results"].items():
             status = "✅" if passed else "❌"
             print(f"  {gate}: {status}")
-        
+
         if not result["gates_passed"] and not args.force:
-            print(f"\nUse --force to override quality gates")
-        
+            print("\nUse --force to override quality gates")
+
         print(f"\nTimestamp: {result['timestamp']}")
-        
+
     except ValueError as e:
         print(f"Error: {e}")
 
@@ -262,16 +259,16 @@ def registry_cmd(args):
 
     for i, exp in enumerate(sorted(registry_data["experiments"], key=sort_key), 1):
         date = exp["created_at"].split("T")[0]
-        
+
         if exp["id"] == production_id:
             rank = "🚀"
         elif exp["id"] == best_id:
             rank = "⭐"
         else:
             rank = f"{i:2d}"
-        
+
         prod_status = "🚀" if exp["id"] == production_id else ""
-        
+
         mape_str = f"{exp.get('test_mape', 'N/A'):.1f}%" if exp.get("test_mape") is not None else "N/A"
         acc_str = (
             f"{exp.get('test_accuracy_15pct', 'N/A'):.1f}%"
@@ -281,9 +278,7 @@ def registry_cmd(args):
 
         mae_value = exp.get("test_mae", exp.get("test_rmse", 0))
         mae_str = f"${mae_value:,.0f}"
-        
         data_v = exp.get('data_version', '-')
-
         print(f"{rank:<4} | {exp['id']:<35} | {prod_status:<4} | {data_v:<4} | {date} | {mape_str:<6} | {acc_str:<7} | {mae_str:<8}")
 
 
@@ -316,10 +311,10 @@ def main():
 
     data_parser = subparsers.add_parser("data", help="Data version management")
     data_subparsers = data_parser.add_subparsers(dest="data_command", help="Data commands")
-    
+
     snapshot_parser = data_subparsers.add_parser("snapshot", help="Create data snapshot")
     snapshot_parser.add_argument("--note", help="Description for this version")
-    
+
     list_data_parser = data_subparsers.add_parser("list", help="List data versions")
 
     args = parser.parse_args()

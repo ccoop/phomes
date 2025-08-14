@@ -3,50 +3,57 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict
 
+import config
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-import config
-from shared import registry
+from shared import registry, catalog
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Load demographics once at startup
+# Load demographics and prepare efficient lookup once at startup
 demographics_df = None
+valid_zipcodes = None
+demographics_median_row = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global demographics_df
+    global demographics_df, valid_zipcodes, demographics_median_row
     logger.info("Starting up API server...")
-    
-    # Load demographics data once
-    demographics_df = pd.read_csv(config.DATA_SOURCES["demographics_path"], dtype={"zipcode": str})
+
+    # Load demographics data once using DataCatalog for consistency
+    demographics_df = catalog.load_source("demographics", validate=True)
     logger.info(f"Loaded demographics for {len(demographics_df)} zipcodes")
     
+    # Create efficient zipcode lookup and median fallback
+    valid_zipcodes = set(demographics_df.zipcode.values)
+    numeric_cols = demographics_df.select_dtypes(include=['number']).columns.tolist()
+    medians = demographics_df[numeric_cols].median()
+    demographics_median_row = pd.DataFrame([medians.to_dict()])
+    logger.info(f"Prepared efficient lookup for {len(valid_zipcodes)} zipcodes")
+
     logger.info("API startup complete")
     yield
     logger.info("API shutdown")
+
 
 app = FastAPI(
     title="phData Home Price Prediction API",
     description="ML API for predicting home prices using King County housing data",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
+
 class PredictRequest(BaseModel):
-    id: int = Field(..., description="Unique identifier")
     bedrooms: int = Field(..., ge=0, description="Number of bedrooms")
     bathrooms: float = Field(..., ge=0, description="Number of bathrooms")
     sqft_living: int = Field(..., gt=0, le=50_000, description="Square feet of living space")
-    sqft_lot: int = Field(..., gt=0, le=1_000_000, description="Square feet of lot")
+    sqft_lot: int = Field(..., gt=0, description="Square feet of lot")
     floors: float = Field(..., ge=1, description="Number of floors")
     waterfront: int = Field(..., ge=0, le=1, description="Waterfront property (0 or 1)")
     view: int = Field(..., ge=0, le=4, description="View rating (0-4)")
@@ -62,6 +69,7 @@ class PredictRequest(BaseModel):
     sqft_living15: int = Field(..., ge=0, description="Living space of nearest 15 neighbors")
     sqft_lot15: int = Field(..., ge=0, description="Lot size of nearest 15 neighbors")
 
+
 class ModelResponse(BaseModel):
     predicted_price: float
     model_version: str
@@ -69,65 +77,75 @@ class ModelResponse(BaseModel):
     features_used: Dict[str, Any]
 
 
+def get_model_id():
+    """Determine which model to use - env override, production, or best model."""
+    model_id = os.getenv("ACTIVE_MODEL_ID")
+    if model_id:
+        return model_id
+    
+    production_model = registry.get_production_model()
+    if production_model:
+        return production_model["id"]
+    
+    registry_data = registry.load_registry()
+    return registry_data["best_model"]["id"]
+
+
+def try_auto_promotion(model_id):
+    """Try to auto-promote model if enabled."""
+    if not config.PROMOTION["auto_promote"]:
+        return
+    
+    try:
+        gate_results, gates_passed = registry.evaluate_quality_gates(model_id)
+        if gates_passed:
+            result = registry.promote_to_production(model_id)
+            logger.info(f"Auto-promoted model {model_id}: {json.dumps(result)}")
+        else:
+            logger.info(f"Model {model_id} failed quality gates: {gate_results}")
+    except Exception as e:
+        logger.warning(f"Auto-promotion failed for {model_id}: {e}")
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+
 @app.post("/predict", response_model=ModelResponse)
 async def predict(request: PredictRequest):
     try:
-        model_id = os.getenv("ACTIVE_MODEL_ID")
-        
-        if model_id:
-            production_model = registry.get_production_model()
-            if config.PROMOTION["auto_promote"] and (not production_model or model_id != production_model["id"]):
-                try:
-                    gate_results, gates_passed = registry.evaluate_quality_gates(model_id)
-                    if gates_passed:
-                        result = registry.promote_to_production(model_id)
-                        logger.info(f"Auto-promoted model {model_id} to production: {json.dumps(result)}")
-                    else:
-                        logger.info(f"Model {model_id} failed quality gates, not auto-promoted: {gate_results}")
-                except Exception as e:
-                    logger.warning(f"Auto-promotion failed for {model_id}: {e}")
-        
-        if not model_id:
-            production_model = registry.get_production_model()
-            if production_model:
-                model_id = production_model["id"]
-            else:
-                registry_data = registry.load_registry()
-                model_id = registry_data["best_model"]["id"]
+        # Get model and check if auto-promotion needed
+        model_id = get_model_id()
+        production_model = registry.get_production_model()
+        if not production_model or model_id != production_model["id"]:
+            try_auto_promotion(model_id)
         
         model_data = registry.get_model(model_id)
+        logger.info(f"Prediction request for zipcode {request.zipcode}")
         
-        # Merge request data with demographics
+        # Efficient zipcode handling with median fallback
         request_df = pd.DataFrame([request.dict()])
-        merged_df = request_df.merge(demographics_df, on='zipcode', how='left')
-        
+        if request.zipcode in valid_zipcodes:
+            merged_df = request_df.merge(demographics_df, on="zipcode", how="left")
+        else:
+            logger.info(f"Unknown zipcode {request.zipcode}, using median demographics")
+            merged_df = pd.concat([request_df, demographics_median_row], axis=1)
+
         # Align features and predict
-        feature_df = merged_df[model_data['features']]
-        prediction = model_data['pipeline'].predict(feature_df)[0]
+        feature_df = merged_df[model_data["features"]]
+        prediction = model_data["pipeline"].predict(feature_df)[0]
 
         response = ModelResponse(
             predicted_price=float(prediction),
             model_version=model_id,
             timestamp=datetime.now().isoformat(),
-            features_used=request.dict()
+            features_used=request.dict(),
         )
 
-        log_entry = {
-            "endpoint": "/predict",
-            "input": request.dict(),
-            "prediction": float(prediction),
-            "model_id": model_id,
-            "timestamp": response.timestamp
-        }
-        logger.info(json.dumps(log_entry))
-
+        logger.info(f"Prediction: ${prediction:,.0f} using model {model_id}")
         return response
 
     except Exception as e:
         logger.error(f"Prediction error: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction failed")
-
