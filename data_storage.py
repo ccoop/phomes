@@ -4,14 +4,81 @@ Data versioning and catalog management for ML.
 
 import hashlib
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, Field, validator
 from sklearn.model_selection import train_test_split
 import config
+
+logger = logging.getLogger(__name__)
+
+
+class HomeSale(BaseModel):
+    """Pydantic model for validating house sale data."""
+    id: int = Field(gt=0, description="Unique house ID")
+    date: str = Field(description="Sale date")
+    price: float = Field(gt=0, lt=50_000_000, description="Sale price")
+    bedrooms: int = Field(ge=0, le=20, description="Number of bedrooms")
+    bathrooms: float = Field(ge=0, le=10, description="Number of bathrooms")
+    sqft_living: int = Field(gt=0, le=50_000, description="Living space square footage")
+    sqft_lot: int = Field(gt=0, le=1_000_000, description="Lot square footage")
+    floors: float = Field(ge=1, le=10, description="Number of floors")
+    waterfront: int = Field(ge=0, le=1, description="Waterfront property (0 or 1)")
+    view: int = Field(ge=0, le=4, description="View rating")
+    condition: int = Field(ge=1, le=5, description="Overall condition")
+    grade: int = Field(ge=1, le=13, description="Overall grade")
+    sqft_above: int = Field(ge=0, le=50_000, description="Above ground square footage")
+    sqft_basement: int = Field(ge=0, le=50_000, description="Basement square footage")
+    yr_built: int = Field(ge=1800, le=2025, description="Year built")
+    yr_renovated: int = Field(ge=0, le=2025, description="Year renovated")
+    zipcode: str = Field(min_length=5, max_length=5, description="Zipcode")
+    lat: float = Field(ge=47.0, le=48.0, description="Latitude")
+    long: float = Field(ge=-123.0, le=-121.0, description="Longitude")
+    sqft_living15: int = Field(ge=0, le=50_000, description="Avg living space of 15 nearest neighbors")
+    sqft_lot15: int = Field(ge=0, le=1_000_000, description="Avg lot size of 15 nearest neighbors")
+
+    @validator('date')
+    def validate_date_format(cls, v):
+        """Validate date is in expected format."""
+        if not v or len(v) < 8:
+            raise ValueError("Date must be in YYYYMMDT format")
+        return v
+
+
+class ZipcodeDemographics(BaseModel):
+    """Pydantic model for validating zipcode demographic data."""
+    ppltn_qty: int = Field(ge=0, description="Total population")
+    urbn_ppltn_qty: int = Field(ge=0, description="Urban population")
+    sbrbn_ppltn_qty: int = Field(ge=0, description="Suburban population")
+    farm_ppltn_qty: int = Field(ge=0, description="Farm population")
+    non_farm_qty: int = Field(ge=0, description="Non-farm population")
+    medn_hshld_incm_amt: float = Field(ge=0, description="Median household income")
+    medn_incm_per_prsn_amt: float = Field(ge=0, description="Median income per person")
+    hous_val_amt: float = Field(ge=0, description="Housing value amount")
+    edctn_less_than_9_qty: int = Field(ge=0, description="Education less than 9th grade")
+    edctn_9_12_qty: int = Field(ge=0, description="Education 9-12 grade")
+    edctn_high_schl_qty: int = Field(ge=0, description="High school education")
+    edctn_some_clg_qty: int = Field(ge=0, description="Some college education")
+    edctn_assoc_dgre_qty: int = Field(ge=0, description="Associate degree")
+    edctn_bchlr_dgre_qty: int = Field(ge=0, description="Bachelor's degree")
+    edctn_prfsnl_qty: int = Field(ge=0, description="Professional degree")
+    per_urbn: float = Field(ge=0, le=100, description="Percent urban")
+    per_sbrbn: float = Field(ge=0, le=100, description="Percent suburban")
+    per_farm: float = Field(ge=0, le=100, description="Percent farm")
+    per_non_farm: float = Field(ge=0, le=100, description="Percent non-farm")
+    per_less_than_9: float = Field(ge=0, le=100, description="Percent less than 9th grade")
+    per_9_to_12: float = Field(ge=0, le=100, description="Percent 9-12 grade")
+    per_hsd: float = Field(ge=0, le=100, description="Percent high school")
+    per_some_clg: float = Field(ge=0, le=100, description="Percent some college")
+    per_assoc: float = Field(ge=0, le=100, description="Percent associate degree")
+    per_bchlr: float = Field(ge=0, le=100, description="Percent bachelor's degree")
+    per_prfsnl: float = Field(ge=0, le=100, description="Percent professional degree")
+    zipcode: str = Field(min_length=5, max_length=5, description="Zipcode")
 
 
 class DataCatalog:
@@ -33,10 +100,29 @@ class DataCatalog:
         self.versions_dir.mkdir(parents=True, exist_ok=True)
         self._load_index()
 
+    def _validate_dataframe(self, df: pd.DataFrame, model_class: type) -> pd.DataFrame:
+        """Validate DataFrame rows using Pydantic model."""
+        validated_records = []
+        invalid_count = 0
+        
+        for idx, row in df.iterrows():
+            try:
+                validated_record = model_class(**row.to_dict())
+                validated_records.append(validated_record.dict())
+            except Exception as e:
+                logger.warning(f"Invalid {model_class.__name__} record at row {idx}: {e}")
+                invalid_count += 1
+        
+        logger.info(f"Validated {len(validated_records)} {model_class.__name__} records, rejected {invalid_count}")
+        return pd.DataFrame(validated_records)
+
     def _default_data_loader(self) -> Tuple[pd.DataFrame, pd.Series]:
-        """Default data loading logic for housing data."""
-        sales = pd.read_csv(config.DATA_SOURCES["sales_path"], dtype={"zipcode": str})
-        demographics = pd.read_csv(config.DATA_SOURCES["demographics_path"], dtype={"zipcode": str})
+        """Default data loading logic for housing data with Pydantic validation."""
+        sales_raw = pd.read_csv(config.DATA_SOURCES["sales_path"], dtype={"zipcode": str})
+        demographics_raw = pd.read_csv(config.DATA_SOURCES["demographics_path"], dtype={"zipcode": str})
+        
+        sales = self._validate_dataframe(sales_raw, HomeSale)
+        demographics = self._validate_dataframe(demographics_raw, ZipcodeDemographics)
 
         merged = sales.merge(demographics, how="left", on="zipcode")
         merged = merged.drop(columns="zipcode").dropna()

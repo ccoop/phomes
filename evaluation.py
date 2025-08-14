@@ -3,12 +3,12 @@ Evaluation module for house price prediction models.
 Contains all metrics and evaluation logic with proper type handling.
 """
 
+import time
 from typing import Any
 
-import time
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, r2_score
 
 
 def mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -34,19 +34,18 @@ def log_rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 def measure_prediction_latency(pipeline, X_sample: np.ndarray, n_warmup: int = 3, n_measurements: int = 10) -> float:
     """Measure single prediction latency in milliseconds."""
+
     # Warmup predictions to ensure consistent timing
     for _ in range(n_warmup):
         pipeline.predict(X_sample[:1])
-    
-    # Measure actual prediction time
+
     times = []
     for _ in range(n_measurements):
         start = time.perf_counter()
         pipeline.predict(X_sample[:1])
         end = time.perf_counter()
         times.append((end - start) * 1000)  # Convert to milliseconds
-    
-    # Return median time (robust to outliers)
+
     return float(np.median(times))
 
 
@@ -56,15 +55,15 @@ def price_segment_variance(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     budget_mask = y_true < 400000  # Budget homes
     mid_mask = (y_true >= 400000) & (y_true < 800000)  # Mid-market
     luxury_mask = y_true >= 800000  # Luxury homes
-    
+
     segment_mapes = []
-    
+
     for mask in [budget_mask, mid_mask, luxury_mask]:
         if mask.sum() > 0:  # Only if we have samples in this range
             y_seg = y_true[mask]
             pred_seg = y_pred[mask]
             segment_mapes.append(mape(y_seg, pred_seg))
-    
+
     # Return standard deviation of segment MAPEs
     return float(np.std(segment_mapes)) if len(segment_mapes) > 1 else 0.0
 
@@ -129,12 +128,12 @@ def evaluate_predictions(
         "validation": calculate_comprehensive_metrics(y_val, y_val_pred, "validation"),
         "test": calculate_comprehensive_metrics(y_test, y_test_pred, "test"),
     }
-    
+
     # Add prediction latency if pipeline and X_test are provided
     if pipeline is not None and X_test is not None:
         latency = measure_prediction_latency(pipeline, X_test)
         results["test"]["prediction_latency_ms"] = latency
-    
+
     return results
 
 
@@ -158,11 +157,9 @@ def get_summary_metrics(metrics: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "test_accuracy_15pct": test_metrics["accuracy_within_15pct"],
         "test_price_segment_variance": test_metrics["price_segment_variance"],
     }
-    
-    # Add latency if available
     if "prediction_latency_ms" in test_metrics:
         summary["test_prediction_latency_ms"] = test_metrics["prediction_latency_ms"]
-    
+
     return summary
 
 
@@ -194,7 +191,7 @@ def format_metrics_for_display(metrics: dict[str, dict[str, Any]]) -> str:
     if "prediction_latency_ms" in test_metrics:
         output.append("\n⚡ Performance:")
         output.append(f"  Single Prediction:      {test_metrics['prediction_latency_ms']:.1f}ms")
-    
+
     # Validation comparison
     output.append("\n📊 Validation Comparison:")
     output.append(f"  Val MAPE:       {val_metrics['mape']:.1f}%")
@@ -260,8 +257,7 @@ def determine_best_model(current_best: dict[str, Any], new_model: dict[str, Any]
     # Fall back to MAE comparison (lower is better)
     new_mae = new_model.get("test_mae", float('inf'))
     current_mae = current_best.get("test_mae", float('inf'))
-    
+
     if new_mae < current_mae:
         return new_model
-    else:
-        return current_best
+    return current_best

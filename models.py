@@ -6,7 +6,7 @@ from sklearn.preprocessing import RobustScaler, StandardScaler
 
 
 @registry.experiment(name="knn_baseline", desc="Baseline KNN with robust scaling")
-def knn_baseline(n_neighbors=5, weights="distance"):
+def knn_baseline(n_neighbors=5, weights="uniform"):
     return Pipeline(
         [("scaler", RobustScaler()),
          ("model", KNeighborsRegressor(n_neighbors=n_neighbors, weights=weights))]

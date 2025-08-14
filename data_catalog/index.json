@@ -1,0 +1,24 @@
+{
+  "current": "v3",
+  "next_id": 4,
+  "versions": {
+    "v1": {
+      "created": "2025-08-13T17:00:43.473716",
+      "samples": 21613,
+      "features": 44,
+      "description": "Initial baseline dataset"
+    },
+    "v2": {
+      "created": "2025-08-13T17:03:09.492170",
+      "samples": 21613,
+      "features": 44,
+      "description": "Updated preprocessing pipeline"
+    },
+    "v3": {
+      "created": "2025-08-13T17:10:06.037333",
+      "samples": 21613,
+      "features": 44,
+      "description": "Test simplified storage"
+    }
+  }
+}

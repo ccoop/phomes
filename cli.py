@@ -14,24 +14,6 @@ import config
 from shared import catalog, registry
 
 
-def load_data():
-    """Load and prepare the housing data"""
-    sales_data = pd.read_csv(config.DATA_SOURCES["sales_path"], dtype={"zipcode": str})
-    demographics = pd.read_csv(config.DATA_SOURCES["demographics_path"], dtype={"zipcode": str})
-
-    merged_data = sales_data.merge(demographics, how="left", on="zipcode").drop(columns="zipcode")
-    merged_data = merged_data.dropna()
-
-    y = merged_data.pop("price")
-    X = merged_data.select_dtypes(include=[np.number])
-
-    X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=config.DATA_SPLIT["test_size"], random_state=config.DATA_SPLIT["random_state"])
-    X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=config.DATA_SPLIT["val_size"], random_state=config.DATA_SPLIT["random_state"])
-
-    print(f"Data loaded: Train {len(X_train)}, Val {len(X_val)}, Test {len(X_test)} samples")
-    print(f"Features: {X_train.shape[1]}")
-
-    return X_train, y_train, X_val, y_val, X_test, y_test
 
 
 def parse_params(param_strings):
@@ -60,50 +42,89 @@ def parse_params(param_strings):
 
 def train_cmd(args):
     """Handle the train command"""
-    if args.model not in registry.experiments:
-        print(f"Unknown model: {args.model}")
+    # Validate arguments
+    if not args.all and not args.model:
+        print("Error: Must specify either a model name or --all")
         print("Available models:", list(registry.experiments.keys()))
         return
+    
+    # Determine which models to train
+    if args.all:
+        models_to_train = list(registry.experiments.keys())
+        print(f"Training all {len(models_to_train)} models: {', '.join(models_to_train)}")
+    else:
+        if args.model not in registry.experiments:
+            print(f"Unknown model: {args.model}")
+            print("Available models:", list(registry.experiments.keys()))
+            return
+        models_to_train = [args.model]
 
     params = parse_params(args.params)
-
-    print("Loading data...")
     data_version = getattr(args, 'data', None)
     
+    # Load data once
+    print("Loading data...")
     X_train, y_train, X_val, y_val, X_test, y_test, version_id = \
         catalog.load_version(data_version)
 
     print(f"Data loaded: Train {len(X_train)}, Val {len(X_val)}, Test {len(X_test)} samples")
     print(f"Features: {X_train.shape[1]} | Data version: {version_id}")
 
-    print(f"Creating experiment: {args.model}")
-    if params:
-        print(f"Parameters: {params}")
+    # Train each model
+    for i, model_name in enumerate(models_to_train, 1):
+        if len(models_to_train) > 1:
+            print(f"\n{'=' * 60}")
+            print(f"Training model {i}/{len(models_to_train)}: {model_name}")
+            print(f"{'=' * 60}")
+        
+        print(f"Creating experiment: {model_name}")
+        if params:
+            print(f"Parameters: {params}")
 
-    exp = registry.experiments[args.model](**params)
-    exp.data_version = version_id
+        exp = registry.experiments[model_name](**params)
+        exp.data_version = version_id
 
-    if args.note:
-        exp.description = f"{exp.description} - {args.note}"
+        if args.note:
+            exp.description = f"{exp.description} - {args.note}"
 
-    print(f"Running experiment: {exp.id}")
-    print("Training model...")
+        print(f"Running experiment: {exp.id}")
+        print("Training model...")
 
-    results = registry.run_experiment(exp, X_train, y_train, X_val, y_val, X_test, y_test)
+        results = registry.run_experiment(exp, X_train, y_train, X_val, y_val, X_test, y_test)
 
-    print(f"\n{'=' * 50}")
-    print(f"Experiment Complete: {results['id']}")
-    print(f"{'=' * 50}")
-    print(f"Description: {results['description']}")
+        print(f"\nExperiment Complete: {results['id']}")
+        print(f"Description: {results['description']}")
 
-    from eval import format_metrics_for_display
+        from eval import format_metrics_for_display
+        print(f"\n{format_metrics_for_display(results['metrics'])}")
 
-    print(f"\n{format_metrics_for_display(results['metrics'])}")
+        print(f"\n💾 Data:")
+        print(f"  Features: {results['features']['count']}")
+        print(f"  Data version: {version_id}")
+        print(f"Artifacts saved to: {config.REGISTRY_EXPERIMENTS_DIR}/{results['id']}/")
 
-    print(f"\n💾 Data:")
-    print(f"  Features: {results['features']['count']}")
-    print(f"  Data version: {version_id}")
-    print(f"\nArtifacts saved to: {config.REGISTRY_EXPERIMENTS_DIR}/{results['id']}/")
+    if len(models_to_train) > 1:
+        print(f"\n✅ Completed training {len(models_to_train)} models. Use 'mla registry' to view results.")
+
+
+def serve_cmd(args):
+    """Handle the serve command"""
+    import subprocess
+    import sys
+    
+    host = getattr(args, 'host', '0.0.0.0')
+    port = getattr(args, 'port', 8000)
+    
+    print(f"Starting API server on {host}:{port}")
+    print("Press Ctrl+C to stop the server")
+    
+    try:
+        subprocess.run([
+            sys.executable, "-m", "uvicorn", "api:app", 
+            "--host", host, "--port", str(port), "--reload"
+        ])
+    except KeyboardInterrupt:
+        print("\nServer stopped")
 
 
 def data_cmd(args):
@@ -272,7 +293,8 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     train_parser = subparsers.add_parser("train", help="Train a model")
-    train_parser.add_argument("model", help="Model name to train")
+    train_parser.add_argument("model", nargs="?", help="Model name to train")
+    train_parser.add_argument("--all", action="store_true", help="Train all available models")
     train_parser.add_argument("--params", nargs="+", help="Override params (key=value format)")
     train_parser.add_argument("--note", help="Note about this experiment")
     train_parser.add_argument("--data", help="Specific data version to use (e.g., v1)")
@@ -287,6 +309,10 @@ def main():
     promote_parser = subparsers.add_parser("promote", help="Promote model to production")
     promote_parser.add_argument("experiment_id", help="Experiment ID to promote")
     promote_parser.add_argument("--force", action="store_true", help="Force promotion despite quality gate failures")
+
+    serve_parser = subparsers.add_parser("serve", help="Start API server")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Host to bind (default: 0.0.0.0)")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
 
     data_parser = subparsers.add_parser("data", help="Data version management")
     data_subparsers = data_parser.add_subparsers(dest="data_command", help="Data commands")
@@ -313,6 +339,8 @@ def main():
             registry_cmd(args)
         case "promote":
             promote_cmd(args)
+        case "serve":
+            serve_cmd(args)
         case "data":
             data_cmd(args)
 

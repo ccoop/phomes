@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "phdata-homes"
 version = "0.1.0"
-description = "ML API for home price prediction"
+description = "ML Framework for home price prediction"
 authors = [
     {name = "Chadwicke Cooper"}
 ]

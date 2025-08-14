@@ -6,8 +6,8 @@ Configuration settings for ML experiment system.
 DATA_CATALOG_DIR = "data_catalog"
 
 DATA_SOURCES = {
-    "sales_path": "data/kc_house_data.csv",
-    "demographics_path": "data/zipcode_demographics.csv"
+    "sales_path": "data_catalog/sources/kc_house_data.csv",
+    "demographics_path": "data_catalog/sources/zipcode_demographics.csv"
 }
 
 DATA_SPLIT = {
@@ -17,8 +17,8 @@ DATA_SPLIT = {
 }
 
 # Registry settings
-REGISTRY_EXPERIMENTS_DIR = "experiments"
-REGISTRY_FILE = "experiments/registry.json"
+REGISTRY_EXPERIMENTS_DIR = "model_registry"
+REGISTRY_FILE = "model_registry/registry.json"
 
 # Quality gates for production promotion
 QUALITY_GATES = {
