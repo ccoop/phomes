@@ -1,8 +1,8 @@
 # phData ML Engineer Project - Usage Guide
-My goal for the project was to implement a toolkit for ML workflows
-that would help a data scientist iterate quickly and get their models ready
-for deployment. I thought it would be more interesting to make this vendor-neutral
-so this is all pure Python without external SAAS services or cloud providers.
+My goal for the project was to implement a user-friendly ML toolkit & CLI
+that would help data scientists iterate quickly and get their models ready
+for deployment. I thought it would be interesting to make this vendor-neutral
+so it's all pure Python without external SAAS services or cloud providers.
 
 If you are running the container interactively using -it, here's how to
 get an overview of the project:
