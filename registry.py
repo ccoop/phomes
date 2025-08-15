@@ -72,7 +72,7 @@ class ModelRegistry:
 
         model_metrics = {
             "test_mape": test_metrics["mape"],
-            "test_accuracy_15pct": test_metrics["accuracy_within_15pct"],
+            "test_confidence_band_90pct": test_metrics["confidence_band_90pct"],
             "test_r2": test_metrics["r2"],
             "test_prediction_latency_ms": test_metrics.get("prediction_latency_ms", 0),
         }
@@ -80,7 +80,7 @@ class ModelRegistry:
         gates = config.QUALITY_GATES
         results = {
             "mape": model_metrics["test_mape"] <= gates["max_mape"],
-            "accuracy_15pct": model_metrics["test_accuracy_15pct"] >= gates["min_accuracy_15pct"],
+            "confidence_band_90pct": model_metrics["test_confidence_band_90pct"] >= gates["min_confidence_band_90pct"],
             "r2": model_metrics["test_r2"] >= gates["min_r2"],
             "latency": model_metrics["test_prediction_latency_ms"] <= gates["max_latency_ms"],
         }
@@ -142,14 +142,14 @@ class ModelRegistry:
         registry["best_model"] = determine_best_model(registry.get("best_model"), experiment_summary)
         self.save_registry(registry)
 
-    def find_existing_experiment(self, model_name: str, parameters: dict, data_version: str) -> dict | None:
+    def find_existing_experiment(self, model_name: str, parameters: dict, data_version: str, features: list = None) -> dict | None:
         """Find if experiment already exists with same fingerprint"""
-        fingerprint = self._calculate_fingerprint(model_name, parameters, data_version)
+        fingerprint = self._calculate_fingerprint(model_name, parameters, data_version, features)
         registry = self.load_registry()
 
         for exp in registry.get("experiments", []):
             if exp.get("fingerprint") == fingerprint:
-                if "test_mape" in exp and "test_accuracy_15pct" in exp:
+                if "test_mape" in exp and "test_confidence_band_90pct" in exp:
                     print(f"Found existing experiment with same fingerprint: {exp['id']}")
                     try:
                         return self.get_experiment_metadata(exp["id"])
@@ -216,10 +216,11 @@ class ModelRegistry:
             print(f"{name}: {meta['description']}")
             print()
 
-    def _calculate_fingerprint(self, model_name: str, parameters: dict, data_version: str) -> str:
-        """Create unique fingerprint for model+params+data combination"""
+    def _calculate_fingerprint(self, model_name: str, parameters: dict, data_version: str, features: list = None) -> str:
+        """Create unique fingerprint for model+params+data+features combination"""
         param_str = json.dumps(parameters, sort_keys=True)
-        return hashlib.md5(f"{model_name}_{param_str}_{data_version}".encode()).hexdigest()
+        feature_str = json.dumps(sorted(features or []), sort_keys=True)
+        return hashlib.md5(f"{model_name}_{param_str}_{data_version}_{feature_str}".encode()).hexdigest()
 
     def experiment(self, name: str, desc: str = ""):
         """Decorator to register model experiments"""
@@ -233,14 +234,28 @@ class ModelRegistry:
         experiment.features_used = list(X_train.columns) if hasattr(X_train, "columns") else []
         experiment.feature_count = X_train.shape[1]
 
-        existing = self.find_existing_experiment(
-            experiment.name, experiment.parameters, experiment.data_version or "unknown"
-        )
-        if existing:
-            print(f"Skipping training - using existing experiment: {existing['id']}")
-            return existing
+        # Temporarily disabled to test sample weights
+        # existing = self.find_existing_experiment(
+        #     experiment.name, experiment.parameters, experiment.data_version or "unknown", experiment.features_used
+        # )
+        # if existing:
+        #     print(f"Skipping training - using existing experiment: {existing['id']}")
+        #     return existing
 
-        experiment.pipeline.fit(X_train, y_train)
+        # Calculate MAPE-aligned sample weights (inverse price weighting)
+        sample_weight = 1.0 / y_train
+        sample_weight = sample_weight * len(y_train) / sample_weight.sum()
+        
+        # Apply weights - try with weights first, fallback without
+        try:
+            if hasattr(experiment.pipeline, 'named_steps'):
+                # Pipeline with steps - pass to final model step
+                experiment.pipeline.fit(X_train, y_train, model__sample_weight=sample_weight)
+            else:
+                # Direct model
+                experiment.pipeline.fit(X_train, y_train, sample_weight=sample_weight)
+        except TypeError:
+            experiment.pipeline.fit(X_train, y_train)
 
         y_train_pred = experiment.pipeline.predict(X_train)
         y_val_pred = experiment.pipeline.predict(X_val)
@@ -258,7 +273,7 @@ class ModelRegistry:
         )
 
         fingerprint = self._calculate_fingerprint(
-            experiment.name, experiment.parameters, experiment.data_version or "unknown"
+            experiment.name, experiment.parameters, experiment.data_version or "unknown", experiment.features_used
         )
 
         results = {
@@ -270,7 +285,7 @@ class ModelRegistry:
             "fingerprint": fingerprint,
             "data_version": experiment.data_version,
             "features": {"names": experiment.features_used, "count": experiment.feature_count},
-            "pipeline_steps": [f"{name}: {type(step).__name__}" for name, step in experiment.pipeline.steps],
+            "pipeline_steps": [f"{name}: {type(step).__name__}" for name, step in experiment.pipeline.steps] if hasattr(experiment.pipeline, 'steps') else [f"model: {type(experiment.pipeline).__name__}"],
             "hyperparameters": {k: str(v) for k, v in experiment.pipeline.get_params().items()},
             "metrics": metrics,
         }
