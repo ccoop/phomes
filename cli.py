@@ -6,7 +6,6 @@ import config
 from shared import catalog, registry
 from rich.console import Console
 from rich.table import Table
-from rich.progress import track
 
 console = Console()
 
@@ -91,13 +90,7 @@ def train_cmd(args):
     if include_features:
         console.print(f"[yellow]Included features:[/yellow] {', '.join(include_features)}")
 
-    # Use progress tracking if training multiple models
-    if len(models_to_train) > 1:
-        models_iter = track(models_to_train, description="Training models...")
-    else:
-        models_iter = models_to_train
-
-    for model_name in models_iter:
+    for model_name in models_to_train:
         if len(models_to_train) > 1:
             console.print(f"\n[bold]Training: {model_name}[/bold]")
 
@@ -121,17 +114,15 @@ def train_cmd(args):
 
         test_metrics = results['metrics']['test']
         mape = test_metrics.get('mape')
-        acc15 = test_metrics.get('accuracy_within_15pct')
         mae = test_metrics.get('mae')
         r2 = test_metrics.get('r2')
 
-        console.print(f"\n[bold]Performance:[/bold]")
+        console.print("\n[bold]Performance:[/bold]")
         console.print(f"  MAPE: {mape:.1f}%" if mape is not None else "  MAPE: N/A")
-        console.print(f"  Accuracy within 15%: {acc15:.1f}%" if acc15 is not None else "  Accuracy within 15%: N/A")
         console.print(f"  MAE: ${mae:,.0f}" if mae is not None else "  MAE: N/A")
         console.print(f"  R²: {r2:.3f}" if r2 is not None else "  R²: N/A")
 
-        console.print(f"\n[bold]Data:[/bold]")
+        console.print("\n[bold]Data:[/bold]")
         console.print(f"  Features: {results['features']['count']}")
         console.print(f"  Data version: {version_id}")
         console.print(f"Artifacts saved to: {config.REGISTRY_EXPERIMENTS_DIR}/{results['id']}/")

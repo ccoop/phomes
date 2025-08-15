@@ -1,20 +1,20 @@
 import json
 import logging
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Dict
 
 import config
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from shared import registry, catalog
+from shared import catalog, registry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Load demographics and prepare efficient lookup once at startup
 demographics_df = None
 valid_zipcodes = None
 demographics_median_row = None
@@ -25,10 +25,9 @@ async def lifespan(app: FastAPI):
     global demographics_df, valid_zipcodes, demographics_median_row
     logger.info("Starting up API server...")
 
-    # Load demographics data once using DataCatalog for consistency
     demographics_df = catalog.load_source("demographics", validate=True)
     logger.info(f"Loaded demographics for {len(demographics_df)} zipcodes")
-    
+
     # Create efficient zipcode lookup and median fallback
     valid_zipcodes = set(demographics_df.zipcode.values)
     numeric_cols = demographics_df.select_dtypes(include=['number']).columns.tolist()
@@ -43,7 +42,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="phData Home Price Prediction API",
-    description="ML API for predicting home prices using King County housing data",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -72,21 +70,24 @@ class PredictRequest(BaseModel):
 
 class ModelResponse(BaseModel):
     predicted_price: float
+    price_range_low: float
+    price_range_high: float
     model_version: str
+    request_id: str
     timestamp: str
-    features_used: Dict[str, Any]
+    response_time_ms: float
 
 
-def get_model_id():
+def get_active_model():
     """Determine which model to use - env override, production, or best model."""
     model_id = os.getenv("ACTIVE_MODEL_ID")
     if model_id:
         return model_id
-    
+
     production_model = registry.get_production_model()
     if production_model:
         return production_model["id"]
-    
+
     registry_data = registry.load_registry()
     return registry_data["best_model"]["id"]
 
@@ -95,7 +96,7 @@ def try_auto_promotion(model_id):
     """Try to auto-promote model if enabled."""
     if not config.PROMOTION["auto_promote"]:
         return
-    
+
     try:
         gate_results, gates_passed = registry.evaluate_quality_gates(model_id)
         if gates_passed:
@@ -109,43 +110,53 @@ def try_auto_promotion(model_id):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 
 @app.post("/predict", response_model=ModelResponse)
 async def predict(request: PredictRequest):
+    request_id = str(uuid.uuid4())
+    start_time = time.perf_counter()
+
     try:
-        # Get model and check if auto-promotion needed
-        model_id = get_model_id()
+        model_id = get_active_model()
         production_model = registry.get_production_model()
         if not production_model or model_id != production_model["id"]:
+            # Promote new model if it passes quality gates
             try_auto_promotion(model_id)
-        
+
         model_data = registry.get_model(model_id)
-        logger.info(f"Prediction request for zipcode {request.zipcode}")
-        
-        # Efficient zipcode handling with median fallback
+        logger.info(f"Request {request_id}: Predicting for zipcode {request.zipcode}")
+
+        # Merge demographics, fallback to median if not in dataset
         request_df = pd.DataFrame([request.dict()])
         if request.zipcode in valid_zipcodes:
             merged_df = request_df.merge(demographics_df, on="zipcode", how="left")
         else:
-            logger.info(f"Unknown zipcode {request.zipcode}, using median demographics")
+            logger.info(f"Request {request_id}: Unknown zipcode {request.zipcode}, using median demographics")
             merged_df = pd.concat([request_df, demographics_median_row], axis=1)
 
         # Align features and predict
         feature_df = merged_df[model_data["features"]]
         prediction = model_data["pipeline"].predict(feature_df)[0]
 
+        price_range_low = prediction * 0.85
+        price_range_high = prediction * 1.15
+        response_time = (time.perf_counter() - start_time) * 1000
         response = ModelResponse(
             predicted_price=float(prediction),
+            price_range_low=float(price_range_low),
+            price_range_high=float(price_range_high),
             model_version=model_id,
+            request_id=request_id,
             timestamp=datetime.now().isoformat(),
-            features_used=request.dict(),
+            response_time_ms=response_time,
         )
 
-        logger.info(f"Prediction: ${prediction:,.0f} using model {model_id}")
+        logger.info(f"Request {request_id}: Predicted ${prediction:,.0f} (range: ${price_range_low:,.0f}-${price_range_high:,.0f}) in {response_time:.1f}ms")
         return response
 
     except Exception as e:
-        logger.error(f"Prediction error: {str(e)}")
+        response_time = (time.perf_counter() - start_time) * 1000
+        logger.error(f"Request {request_id}: Prediction error after {response_time:.1f}ms: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction failed")

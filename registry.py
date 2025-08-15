@@ -99,10 +99,9 @@ class ModelRegistry:
 
     def promote_to_production(self, experiment_id: str, force: bool = False) -> dict:
         """Promote experiment to production"""
+
         gate_results, gates_passed = self.evaluate_quality_gates(experiment_id)
-
         should_promote = gates_passed or (force and config.PROMOTION["allow_force_promote"])
-
         if should_promote:
             self._set_production_model(experiment_id)
 
@@ -119,7 +118,6 @@ class ModelRegistry:
         """Set experiment as production model"""
         exp_metadata = self.get_experiment_metadata(experiment_id)
         registry = self.load_registry()
-
         summary_metrics = get_summary_metrics(exp_metadata["metrics"])
         production_model = {
             "id": experiment_id,
@@ -136,14 +134,15 @@ class ModelRegistry:
         self.save_registry(registry)
 
     def add_experiment(self, experiment_summary: dict) -> None:
-        """Add experiment to registry"""
+        """Add experiment to registry."""
+
         registry = self.load_registry()
         registry["experiments"].append(experiment_summary)
         registry["best_model"] = determine_best_model(registry.get("best_model"), experiment_summary)
         self.save_registry(registry)
 
     def find_existing_experiment(self, model_name: str, parameters: dict, data_version: str, features: list = None) -> dict | None:
-        """Find if experiment already exists with same fingerprint"""
+        """Find if experiment already exists with same fingerprint."""
         fingerprint = self._calculate_fingerprint(model_name, parameters, data_version, features)
         registry = self.load_registry()
 
@@ -242,20 +241,7 @@ class ModelRegistry:
         #     print(f"Skipping training - using existing experiment: {existing['id']}")
         #     return existing
 
-        # Calculate MAPE-aligned sample weights (inverse price weighting)
-        sample_weight = 1.0 / y_train
-        sample_weight = sample_weight * len(y_train) / sample_weight.sum()
-        
-        # Apply weights - try with weights first, fallback without
-        try:
-            if hasattr(experiment.pipeline, 'named_steps'):
-                # Pipeline with steps - pass to final model step
-                experiment.pipeline.fit(X_train, y_train, model__sample_weight=sample_weight)
-            else:
-                # Direct model
-                experiment.pipeline.fit(X_train, y_train, sample_weight=sample_weight)
-        except TypeError:
-            experiment.pipeline.fit(X_train, y_train)
+        experiment.pipeline.fit(X_train, y_train)
 
         y_train_pred = experiment.pipeline.predict(X_train)
         y_val_pred = experiment.pipeline.predict(X_val)

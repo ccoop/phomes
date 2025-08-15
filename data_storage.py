@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional, Tuple
 import config
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,8 @@ class HomeSale(BaseModel):
     sqft_living15: int = Field(ge=0, le=50_000, description="Avg living space of 15 nearest neighbors")
     sqft_lot15: int = Field(ge=0, le=1_000_000, description="Avg lot size of 15 nearest neighbors")
 
-    @validator('date')
+    @field_validator('date')
+    @classmethod
     def validate_date_format(cls, v):
         """Validate date is in expected format."""
         if not v or len(v) < 8:
@@ -77,10 +78,11 @@ class ZipcodeDemographics(BaseModel):
     per_bchlr: float = Field(ge=0, le=100, description="Percent bachelor's degree")
     per_prfsnl: float = Field(ge=0, le=100, description="Percent professional degree")
     zipcode: str = Field(min_length=5, max_length=5, description="Zipcode")
-    
-    @validator('ppltn_qty', 'urbn_ppltn_qty', 'sbrbn_ppltn_qty', 'farm_ppltn_qty', 'non_farm_qty',
-               'edctn_less_than_9_qty', 'edctn_9_12_qty', 'edctn_high_schl_qty', 'edctn_some_clg_qty',
-               'edctn_assoc_dgre_qty', 'edctn_bchlr_dgre_qty', 'edctn_prfsnl_qty', pre=True)
+
+    @field_validator('ppltn_qty', 'urbn_ppltn_qty', 'sbrbn_ppltn_qty', 'farm_ppltn_qty', 'non_farm_qty',
+                     'edctn_less_than_9_qty', 'edctn_9_12_qty', 'edctn_high_schl_qty', 'edctn_some_clg_qty',
+                     'edctn_assoc_dgre_qty', 'edctn_bchlr_dgre_qty', 'edctn_prfsnl_qty', mode='before')
+    @classmethod
     def round_counts(cls, v):
         """Round fractional population/education counts to integers."""
         return int(round(float(v))) if v is not None else v
@@ -127,7 +129,9 @@ class DataCatalog:
         demographics = self.load_source("demographics", validate=True)
 
         merged = sales.merge(demographics, how="left", on="zipcode")
-        merged = merged.drop(columns="zipcode").dropna()
+        merged = merged.drop(columns="zipcode")
+        numeric_cols = merged.select_dtypes(include=[np.number]).columns
+        merged[numeric_cols] = merged[numeric_cols].fillna(merged[numeric_cols].median())
 
         y = merged.pop("price")
         X = merged.select_dtypes(include=[np.number])
@@ -204,19 +208,17 @@ class DataCatalog:
 
         version = self.get_version_metadata(version_id)
         X, y = self.data_loader()
-
-        # Warn if data has changed since version was created
-        current_fingerprint = self._calculate_fingerprint(X, y)
-        data_changed = current_fingerprint != version["fingerprint"]
-
         split_config = version["split_config"]
-
         X_temp, X_test, y_temp, y_test = train_test_split(
-            X, y, test_size=split_config["test_size"], random_state=split_config["random_state"]
+            X, y,
+            test_size=split_config["test_size"],
+            random_state=split_config["random_state"]
         )
 
         X_train, X_val, y_train, y_val = train_test_split(
-            X_temp, y_temp, test_size=split_config["val_size"], random_state=split_config["random_state"]
+            X_temp, y_temp,
+            test_size=split_config["val_size"],
+            random_state=split_config["random_state"]
         )
 
         return X_train, y_train, X_val, y_val, X_test, y_test, version_id
@@ -260,11 +262,11 @@ class DataCatalog:
 
     def load_source(self, source_name: str, validate: bool = True) -> pd.DataFrame:
         """Load and optionally validate a data source by name.
-        
+
         Args:
             source_name: Name of source ('sales', 'demographics', 'future_unseen_examples')
             validate: Whether to apply Pydantic validation
-            
+
         Returns:
             Validated DataFrame with consistent dtypes
         """
@@ -274,20 +276,20 @@ class DataCatalog:
             "demographics": {"path_key": "demographics_path", "model": ZipcodeDemographics},
             "future_unseen_examples": {"path_key": "future_unseen_examples_path", "model": None}
         }
-        
+
         if source_name not in source_config:
             raise ValueError(f"Unknown source: {source_name}. Available: {list(source_config.keys())}")
-        
+
         config_info = source_config[source_name]
         file_path = config.DATA_SOURCES[config_info["path_key"]]
-        
+
         # Load with consistent dtypes (zipcode as string)
         df = pd.read_csv(file_path, dtype={"zipcode": str})
-        
+
         # Apply validation if requested and model available
         if validate and config_info["model"]:
             df = self._validate_dataframe(df, config_info["model"])
-            
+
         return df
 
     def _calculate_fingerprint(self, X: pd.DataFrame, y: pd.Series) -> str:
@@ -304,15 +306,3 @@ class DataCatalog:
         fingerprint_str = json.dumps(fingerprint_data, sort_keys=True)
         return hashlib.sha256(fingerprint_str.encode()).hexdigest()[:16]
 
-
-def load_housing_data() -> Tuple[pd.DataFrame, pd.Series]:
-    """Standard housing data loader for backward compatibility."""
-    sales = pd.read_csv(config.DATA_SOURCES["sales_path"], dtype={"zipcode": str})
-    demographics = pd.read_csv(config.DATA_SOURCES["demographics_path"], dtype={"zipcode": str})
-
-    merged = sales.merge(demographics, how="left", on="zipcode")
-    merged = merged.drop(columns="zipcode").dropna()
-    y = merged.pop("price")
-    X = merged.select_dtypes(include=[np.number])
-
-    return X, y

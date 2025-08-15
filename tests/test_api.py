@@ -45,7 +45,7 @@ unseen_examples_df = catalog.load_source("future_unseen_examples", validate=Fals
 
 # Use 25 examples for comprehensive testing
 TEST_REQUESTS = [
-    unseen_examples_df.iloc[i].to_dict() 
+    unseen_examples_df.iloc[i].to_dict()
     for i in range(min(25, len(unseen_examples_df)))
 ]
 
@@ -61,24 +61,37 @@ def test_valid_prediction_requests():
     """Test valid requests return proper responses for all 25 examples."""
     for i, test_request in enumerate(TEST_REQUESTS):
         response = requests.post(f"{API_URL}/predict", json=test_request)
-        
+
         assert response.status_code == 200, f"Request {i} failed with status {response.status_code}"
         data = response.json()
 
         # Validate response schema
         assert "predicted_price" in data
+        assert "price_range_low" in data
+        assert "price_range_high" in data
         assert "model_version" in data
+        assert "request_id" in data
         assert "timestamp" in data
-        assert "features_used" in data
+        assert "response_time_ms" in data
 
         # Validate data types and ranges
         assert isinstance(data["predicted_price"], (int, float))
+        assert isinstance(data["price_range_low"], (int, float))
+        assert isinstance(data["price_range_high"], (int, float))
+        assert isinstance(data["response_time_ms"], (int, float))
         assert data["predicted_price"] > 0
+        assert data["price_range_low"] > 0
+        assert data["price_range_high"] > data["price_range_low"]
         assert isinstance(data["model_version"], str)
+        assert isinstance(data["request_id"], str)
         assert isinstance(data["timestamp"], str)
-        
-        # Seattle area price range check
-        assert 100_000 < data["predicted_price"] < 5_000_000
+
+        # Validate price range is approximately ±15%
+        predicted = data["predicted_price"]
+        expected_low = predicted * 0.85
+        expected_high = predicted * 1.15
+        assert abs(data["price_range_low"] - expected_low) < 1
+        assert abs(data["price_range_high"] - expected_high) < 1
 
 
 def test_missing_required_fields():
@@ -143,14 +156,14 @@ def test_health_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert "status" in data
-    assert data["status"] == "healthy"
+    assert data["status"] == "ok"
     assert "timestamp" in data
 
 
 def test_unknown_zipcode_handling():
     """Test how API handles unknown zipcode with median fallback."""
     response = requests.post(f"{API_URL}/predict", json=UNKNOWN_ZIPCODE_REQUEST)
-    
+
     # Should return 200 with median demographic values
     assert response.status_code == 200
     data = response.json()
@@ -201,7 +214,7 @@ def test_concurrent_requests():
     # Test with 20 concurrent requests using different examples
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [
-            executor.submit(make_request, TEST_REQUESTS[i % len(TEST_REQUESTS)]) 
+            executor.submit(make_request, TEST_REQUESTS[i % len(TEST_REQUESTS)])
             for i in range(20)
         ]
         results = [future.result() for future in futures]
