@@ -13,8 +13,8 @@ get an overview of the project:
 docker build -t phdata-homes .
 docker run -it --rm phdata-homes
 ```
-The easiest way to try it out is using the cli with the `mla` command. That
-is the main entry point to doing things like managing the model registry, data catalog, and api server.
+The easiest way to try it out is using the `mla` cli interface. That
+is the main entry point to workflows like managing the model registry, data catalog, and api server.
 
 If you are running the container interactively using -it, here's how to
 get an overview of the project:
