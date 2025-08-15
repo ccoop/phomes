@@ -115,9 +115,11 @@ def train_cmd(args):
         mape = test_metrics.get('mape')
         mae = test_metrics.get('mae')
         r2 = test_metrics.get('r2')
+        confidence_band = test_metrics.get('confidence_band_85pct')
 
         console.print("\n[bold]Performance:[/bold]")
         console.print(f"  MAPE: {mape:.1f}%" if mape is not None else "  MAPE: N/A")
+        console.print(f"  Confidence Band: {confidence_band/10:.1f}/10" if confidence_band is not None else "  Confidence Band: N/A")
         console.print(f"  MAE: ${mae:,.0f}" if mae is not None else "  MAE: N/A")
         console.print(f"  R²: {r2:.3f}" if r2 is not None else "  R²: N/A")
 
@@ -225,7 +227,7 @@ def models_list_cmd(args):
     if registry_data.get("production_model"):
         prod = registry_data["production_model"]
         mape = prod.get("test_mape", "N/A")
-        conf_band = prod.get("test_confidence_band_90pct", "N/A")
+        conf_band = prod.get("test_confidence_band_85pct", "N/A")
         promoted_date = prod.get("promoted_at", "").split("T")[0]
         console.print(f"Production model: {prod['id']} (promoted {promoted_date})")
         if isinstance(mape, (int, float)) and isinstance(conf_band, (int, float)):
@@ -234,7 +236,7 @@ def models_list_cmd(args):
     if registry_data["best_model"]:
         best = registry_data["best_model"]
         mape = best.get("test_mape", "N/A")
-        conf_band = best.get("test_confidence_band_90pct", "N/A")
+        conf_band = best.get("test_confidence_band_85pct", "N/A")
         if isinstance(mape, (int, float)) and isinstance(conf_band, (int, float)):
             console.print(f"Best model: {best['id']} ({mape:.1f}% MAPE, {conf_band/10:.1f}/10 confidence band)")
 
@@ -268,8 +270,8 @@ def models_list_cmd(args):
 
         mape_str = f"{exp.get('test_mape', 'N/A'):.1f}%" if exp.get("test_mape") is not None else "N/A"
         conf_str = (
-            f"{exp.get('test_confidence_band_90pct', 'N/A')/10:.1f}/10"
-            if exp.get("test_confidence_band_90pct") is not None
+            f"{exp.get('test_confidence_band_85pct', 'N/A')/10:.1f}/10"
+            if exp.get("test_confidence_band_85pct") is not None
             else "N/A"
         )
 
@@ -323,7 +325,7 @@ def models_show_cmd(args):
         console.print(f"\n[bold]Metrics:[/bold]")
         test_metrics = metadata['metrics']['test']
         console.print(f"  MAPE: {test_metrics.get('mape', 'N/A'):.1f}%" if test_metrics.get('mape') is not None else "  MAPE: N/A")
-        console.print(f"  Confidence Band (90%): {test_metrics.get('confidence_band_90pct', 'N/A')/10:.1f}/10" if test_metrics.get('confidence_band_90pct') is not None else "  Confidence Band (90%): N/A")
+        console.print(f"  Confidence Band (85%): {test_metrics.get('confidence_band_85pct', 'N/A')/10:.1f}/10" if test_metrics.get('confidence_band_85pct') is not None else "  Confidence Band (85%): N/A")
         console.print(f"  MAE: ${test_metrics.get('mae', 'N/A'):,.0f}" if test_metrics.get('mae') is not None else "  MAE: N/A")
         console.print(f"  R²: {test_metrics.get('r2', 'N/A'):.3f}" if test_metrics.get('r2') is not None else "  R²: N/A")
 
@@ -359,7 +361,7 @@ def models_compare_cmd(args):
         for _, row in df.iterrows():
             exp_id = str(row['id'])
             mape = f"{row['test_mape']:.1f}" if isinstance(row['test_mape'], (int, float)) else str(row['test_mape'])
-            conf_band = f"{row['confidence_band_90pct']/10:.1f}/10" if isinstance(row['confidence_band_90pct'], (int, float)) else str(row['confidence_band_90pct'])
+            conf_band = f"{row['confidence_band_85pct']/10:.1f}/10" if isinstance(row['confidence_band_85pct'], (int, float)) else str(row['confidence_band_85pct'])
             mae = f"${row['test_mae']:,.0f}" if isinstance(row['test_mae'], (int, float)) else str(row['test_mae'])
             r2 = f"{row['test_r2']:.3f}" if isinstance(row['test_r2'], (int, float)) else str(row['test_r2'])
             features = str(row['features'])

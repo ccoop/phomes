@@ -37,7 +37,8 @@ mla serve &
 mla models list          # All experiments ranked by performance
 mla models show best     # Best model details
 mla data list           # Data versions
-mla train knn_baseline  # Train new model (if that ver. not already in registry)
+mla train --all         # Train all models
+mla train knn_baseline  # Train new model by name (if that ver. not already in registry)
 mla serve               # Start API server
 ```
 

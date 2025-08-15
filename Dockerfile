@@ -22,5 +22,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Train all models during build
 RUN mla train --all
 
+# Train true baseline with original 7 features for presentation metrics
+RUN mla train knn_baseline --include="bedrooms,bathrooms,sqft_living,sqft_lot,floors,sqft_above,sqft_basement" --note="True baseline - original 7 features from create_model.py"
+
 EXPOSE 8000
 ENTRYPOINT ["bash"]

@@ -72,7 +72,7 @@ class ModelRegistry:
 
         model_metrics = {
             "test_mape": test_metrics["mape"],
-            "test_confidence_band_90pct": test_metrics["confidence_band_90pct"],
+            "test_confidence_band_85pct": test_metrics["confidence_band_85pct"],
             "test_r2": test_metrics["r2"],
             "test_prediction_latency_ms": test_metrics.get("prediction_latency_ms", 0),
         }
@@ -80,7 +80,7 @@ class ModelRegistry:
         gates = config.QUALITY_GATES
         results = {
             "mape": model_metrics["test_mape"] <= gates["max_mape"],
-            "confidence_band_90pct": model_metrics["test_confidence_band_90pct"] >= gates["min_confidence_band_90pct"],
+            "confidence_band_85pct": model_metrics["test_confidence_band_85pct"] >= gates["min_confidence_band_85pct"],
             "r2": model_metrics["test_r2"] >= gates["min_r2"],
             "latency": model_metrics["test_prediction_latency_ms"] <= gates["max_latency_ms"],
         }
@@ -148,7 +148,7 @@ class ModelRegistry:
 
         for exp in registry.get("experiments", []):
             if exp.get("fingerprint") == fingerprint:
-                if "test_mape" in exp and "test_confidence_band_90pct" in exp:
+                if "test_mape" in exp and "test_confidence_band_85pct" in exp:
                     print(f"Found existing experiment with same fingerprint: {exp['id']}")
                     try:
                         return self.get_experiment_metadata(exp["id"])

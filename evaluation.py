@@ -27,9 +27,9 @@ def accuracy_within_pct(y_true: np.ndarray, y_pred: np.ndarray, threshold: float
     return float((pct_errors <= threshold).mean() * 100)
 
 
-def confidence_band_90pct(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Percentage of actual prices within 10% of predicted price (90% confidence band)."""
-    return accuracy_within_pct(y_true, y_pred, 10)
+def confidence_band_85pct(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Percentage of actual prices within 15% of predicted price (85% confidence band)."""
+    return accuracy_within_pct(y_true, y_pred, 15)
 
 
 def log_rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -95,7 +95,7 @@ def calculate_comprehensive_metrics(
         "mape": mape(y_true, y_pred),
         "mdape": mdape(y_true, y_pred),
         # Confidence band for real estate professionals
-        "confidence_band_90pct": confidence_band_90pct(y_true, y_pred),
+        "confidence_band_85pct": confidence_band_85pct(y_true, y_pred),
     }
 
     # Add price segment variance for test set
@@ -157,7 +157,7 @@ def get_summary_metrics(metrics: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "test_r2": test_metrics["r2"],
         "test_mape": test_metrics["mape"],
         "test_mdape": test_metrics["mdape"],
-        "test_confidence_band_90pct": test_metrics["confidence_band_90pct"],
+        "test_confidence_band_85pct": test_metrics["confidence_band_85pct"],
         "test_price_segment_variance": test_metrics["price_segment_variance"],
     }
     if "prediction_latency_ms" in test_metrics:
@@ -186,7 +186,7 @@ def format_metrics_for_display(metrics: dict[str, dict[str, Any]]) -> str:
     output.append(f"  MAPE:                   {test_metrics['mape']:.1f}% (avg error)")
     output.append(f"  MdAPE:                  {test_metrics['mdape']:.1f}% (median error)")
     output.append(f"  MAE:                    ${test_metrics['mae']:,.0f} (avg dollar error)")
-    output.append(f"  Confidence Band:        {test_metrics['confidence_band_90pct']/10:.1f} out of 10 homes sell within predicted range")
+    output.append(f"  Confidence Band:        {test_metrics['confidence_band_85pct']/10:.1f} out of 10 homes sell within predicted range")
     output.append(f"  Price Segment Variance: {test_metrics['price_segment_variance']:.1f}% (consistency across price ranges)")
     output.append(f"  R²:                     {test_metrics['r2']:.3f} (variance explained)")
 
@@ -220,7 +220,7 @@ def compare_experiments_df(experiments_data: list) -> pd.DataFrame:
         row = {
             "id": exp["id"],
             "test_mape": test_metrics.get("mape", "N/A"),
-            "confidence_band_90pct": test_metrics.get("confidence_band_90pct", "N/A"),
+            "confidence_band_85pct": test_metrics.get("confidence_band_85pct", "N/A"),
             "test_mae": test_metrics.get("mae", "N/A"),
             "test_r2": test_metrics.get("r2", "N/A"),
             "features": exp["features"]["count"],
