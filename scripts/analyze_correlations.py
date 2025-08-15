@@ -4,10 +4,8 @@ Analyze feature correlations to identify redundant features
 """
 
 import pandas as pd
-import numpy as np
 from shared import catalog
 
-# Load the data
 print("Loading data...")
 X_train, y_train, X_val, y_val, X_test, y_test, version_id = catalog.load_version()
 
@@ -15,25 +13,27 @@ X_train, y_train, X_val, y_val, X_test, y_test, version_id = catalog.load_versio
 X_all = pd.concat([X_train, X_val, X_test])
 print(f"Analyzing {X_all.shape[0]} samples with {X_all.shape[1]} features")
 
-# Calculate correlation matrix
 print("\nCalculating correlation matrix...")
 corr_matrix = X_all.corr()
 
-# Find highly correlated feature pairs
+
 def find_high_correlations(corr_matrix, threshold=0.9):
     """Find feature pairs with correlation above threshold"""
     high_corr_pairs = []
-    
+
     for i in range(len(corr_matrix.columns)):
-        for j in range(i+1, len(corr_matrix.columns)):
+        for j in range(i + 1, len(corr_matrix.columns)):
             if abs(corr_matrix.iloc[i, j]) >= threshold:
-                high_corr_pairs.append({
-                    'feature1': corr_matrix.columns[i],
-                    'feature2': corr_matrix.columns[j],
-                    'correlation': corr_matrix.iloc[i, j]
-                })
-    
-    return pd.DataFrame(high_corr_pairs).sort_values('correlation', ascending=False)
+                high_corr_pairs.append(
+                    {
+                        "feature1": corr_matrix.columns[i],
+                        "feature2": corr_matrix.columns[j],
+                        "correlation": corr_matrix.iloc[i, j],
+                    }
+                )
+
+    return pd.DataFrame(high_corr_pairs).sort_values("correlation", ascending=False)
+
 
 # Find correlations above different thresholds
 print("\n=== HIGHLY CORRELATED FEATURES ===")
@@ -50,10 +50,24 @@ for threshold in [0.95, 0.90, 0.85]:
 print("\n=== FEATURE GROUP ANALYSIS ===")
 
 # Group features by type
-house_features = ['bedrooms', 'bathrooms', 'sqft_living', 'sqft_lot', 'floors', 
-                  'waterfront', 'view', 'condition', 'grade', 'sqft_above', 
-                  'sqft_basement', 'yr_built', 'yr_renovated', 'sqft_living15', 'sqft_lot15']
-location_features = ['lat', 'long']
+house_features = [
+    "bedrooms",
+    "bathrooms",
+    "sqft_living",
+    "sqft_lot",
+    "floors",
+    "waterfront",
+    "view",
+    "condition",
+    "grade",
+    "sqft_above",
+    "sqft_basement",
+    "yr_built",
+    "yr_renovated",
+    "sqft_living15",
+    "sqft_lot15",
+]
+location_features = ["lat", "long"]
 demographic_features = [col for col in X_all.columns if col not in house_features + location_features]
 
 print(f"\nHouse features ({len(house_features)}): {house_features}")
@@ -82,7 +96,7 @@ features_to_exclude = set()
 
 high_corr_095 = find_high_correlations(corr_matrix, 0.95)
 for _, row in high_corr_095.iterrows():
-    feat1, feat2 = row['feature1'], row['feature2']
+    feat1, feat2 = row["feature1"], row["feature2"]
     # Keep the feature with higher correlation to target
     if abs(target_corr[feat1]) < abs(target_corr[feat2]):
         features_to_exclude.add(feat1)
@@ -110,25 +124,33 @@ print(f"Keep {X_all.shape[1] - len(all_exclude)} features")
 print("\n=== FEATURE IMPORTANCE (from existing gradient boost model) ===")
 try:
     import pickle
-    model_path = "model_registry/gradient_boost_20250814_141128/model.pkl"
-    with open(model_path, 'rb') as f:
+    from pathlib import Path
+
+    # Find a gradient boost model dynamically
+    registry_dir = Path("model_registry")
+    gb_models = list(registry_dir.glob("gradient_boost*/model.pkl"))
+
+    if not gb_models:
+        raise FileNotFoundError("No gradient boost models found")
+
+    model_path = gb_models[0]  # Use the first one found
+    with open(model_path, "rb") as f:
         pipeline = pickle.load(f)
-    
+
     # Get feature importance from the gradient boosting model
-    gb_model = pipeline.named_steps['model']
-    feature_importance = pd.DataFrame({
-        'feature': X_train.columns,
-        'importance': gb_model.feature_importances_
-    }).sort_values('importance', ascending=False)
-    
+    gb_model = pipeline.named_steps["model"]
+    feature_importance = pd.DataFrame(
+        {"feature": X_train.columns, "importance": gb_model.feature_importances_}
+    ).sort_values("importance", ascending=False)
+
     print("\nTop 15 most important features (by tree splits):")
     for _, row in feature_importance.head(15).iterrows():
         print(f"  {row['feature']:30s} : {row['importance']:.4f}")
-    
+
     print("\nBottom 15 least important features:")
     for _, row in feature_importance.tail(15).iterrows():
         print(f"  {row['feature']:30s} : {row['importance']:.4f}")
-    
+
 except Exception as e:
     print(f"Could not load gradient boost model: {e}")
 

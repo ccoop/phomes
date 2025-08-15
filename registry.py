@@ -233,13 +233,12 @@ class ModelRegistry:
         experiment.features_used = list(X_train.columns) if hasattr(X_train, "columns") else []
         experiment.feature_count = X_train.shape[1]
 
-        # Temporarily disabled to test sample weights
-        # existing = self.find_existing_experiment(
-        #     experiment.name, experiment.parameters, experiment.data_version or "unknown", experiment.features_used
-        # )
-        # if existing:
-        #     print(f"Skipping training - using existing experiment: {existing['id']}")
-        #     return existing
+        existing = self.find_existing_experiment(
+            experiment.name, experiment.parameters, experiment.data_version or "unknown", experiment.features_used
+        )
+        if existing:
+            print(f"Skipping training - using existing experiment: {existing['id']}")
+            return existing
 
         experiment.pipeline.fit(X_train, y_train)
 

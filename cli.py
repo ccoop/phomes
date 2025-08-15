@@ -3,9 +3,9 @@
 import argparse
 
 import config
-from shared import catalog, registry
 from rich.console import Console
 from rich.table import Table
+from shared import catalog, registry
 
 console = Console()
 
@@ -22,7 +22,6 @@ def parse_params(param_strings):
             continue
 
         key, value = param.split("=", 1)
-
         try:
             if "." not in value:
                 params[key] = int(value)
@@ -220,7 +219,7 @@ def models_list_cmd(args):
         console.print("No experiments found. Run some experiments first!")
         return
 
-    console.print(f"\n[bold]Experiment Registry[/bold]")
+    console.print(f"\n[bold]ML Model Registry[/bold]")
     console.print(f"Total experiments: {len(registry_data['experiments'])}")
 
     if registry_data.get("production_model"):
@@ -241,12 +240,13 @@ def models_list_cmd(args):
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("Rank", width=4)
-    table.add_column("Experiment", width=50)
+    table.add_column("Experiment", width=45)
     table.add_column("Data", width=4)
     table.add_column("Features", width=8, justify="right")
     table.add_column("MAPE", width=6, justify="right")
     table.add_column("Conf Band", width=9, justify="right")
     table.add_column("MAE", width=8, justify="right")
+    table.add_column("Latency", width=7, justify="right")
 
     def sort_key(exp):
         if "test_mape" in exp and exp["test_mape"] is not None:
@@ -277,8 +277,11 @@ def models_list_cmd(args):
         mae_str = f"${mae_value:,.0f}" if mae_value else "N/A"
         data_v = exp.get('data_version', '-')
         features_count = exp.get('feature_count', exp.get('features', {}).get('count', 'N/A'))
+        
+        latency_value = exp.get("test_prediction_latency_ms")
+        latency_str = f"{latency_value:.1f}ms" if latency_value is not None else "N/A"
 
-        table.add_row(rank, exp['id'], data_v, str(features_count), mape_str, conf_str, mae_str)
+        table.add_row(rank, exp['id'], data_v, str(features_count), mape_str, conf_str, mae_str, latency_str)
 
     console.print(table)
 
@@ -320,7 +323,7 @@ def models_show_cmd(args):
         console.print(f"\n[bold]Metrics:[/bold]")
         test_metrics = metadata['metrics']['test']
         console.print(f"  MAPE: {test_metrics.get('mape', 'N/A'):.1f}%" if test_metrics.get('mape') is not None else "  MAPE: N/A")
-        console.print(f"  Accuracy within 15%: {test_metrics.get('accuracy_within_15pct', 'N/A'):.1f}%" if test_metrics.get('accuracy_within_15pct') is not None else "  Accuracy within 15%: N/A")
+        console.print(f"  Confidence Band (90%): {test_metrics.get('confidence_band_90pct', 'N/A')/10:.1f}/10" if test_metrics.get('confidence_band_90pct') is not None else "  Confidence Band (90%): N/A")
         console.print(f"  MAE: ${test_metrics.get('mae', 'N/A'):,.0f}" if test_metrics.get('mae') is not None else "  MAE: N/A")
         console.print(f"  R²: {test_metrics.get('r2', 'N/A'):.3f}" if test_metrics.get('r2') is not None else "  R²: N/A")
 
@@ -402,7 +405,7 @@ def models_promote_cmd(args):
 
 def main():
     """Main CLI entry point"""
-    parser = argparse.ArgumentParser(description="Machine Learning CLI")
+    parser = argparse.ArgumentParser(description="Machine Learning Toolkit CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     train_parser = subparsers.add_parser("train", help="Train a model")

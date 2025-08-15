@@ -9,7 +9,7 @@ description = "ML Framework for home price prediction"
 authors = [
     {name = "Chadwicke Cooper"}
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.104.0",
     "pydantic>=2.5.0",

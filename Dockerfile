@@ -10,11 +10,11 @@ WORKDIR /app
 
 # Cacheable deps layer
 COPY pyproject.toml uv.lock* ./
-RUN uv sync --frozen --no-install-project
+RUN uv sync --no-install-project
 
 # App code + quick project install
 COPY . .
-RUN uv sync --frozen
+RUN uv sync
 
 # Make the CLI available
 ENV PATH="/app/.venv/bin:$PATH"

@@ -182,7 +182,7 @@ def format_metrics_for_display(metrics: dict[str, dict[str, Any]]) -> str:
     output = []
 
     # Primary metrics section
-    output.append("🎯 Primary Metrics (Test Set):")
+    output.append("PRIMARY METRICS (Test Set):")
     output.append(f"  MAPE:                   {test_metrics['mape']:.1f}% (avg error)")
     output.append(f"  MdAPE:                  {test_metrics['mdape']:.1f}% (median error)")
     output.append(f"  MAE:                    ${test_metrics['mae']:,.0f} (avg dollar error)")
@@ -192,11 +192,11 @@ def format_metrics_for_display(metrics: dict[str, dict[str, Any]]) -> str:
 
     # Performance metrics
     if "prediction_latency_ms" in test_metrics:
-        output.append("\n⚡ Performance:")
+        output.append("\nPERFORMANCE:")
         output.append(f"  Single Prediction:      {test_metrics['prediction_latency_ms']:.1f}ms")
 
     # Validation comparison
-    output.append("\n📊 Validation Comparison:")
+    output.append("\nVALIDATION COMPARISON:")
     output.append(f"  Val MAPE:       {val_metrics['mape']:.1f}%")
     output.append(f"  Val MAE:        ${val_metrics['mae']:,.0f}")
 

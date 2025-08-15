@@ -33,8 +33,6 @@ async def lifespan(app: FastAPI):
     numeric_cols = demographics_df.select_dtypes(include=['number']).columns.tolist()
     medians = demographics_df[numeric_cols].median()
     demographics_median_row = pd.DataFrame([medians.to_dict()])
-    logger.info(f"Prepared efficient lookup for {len(valid_zipcodes)} zipcodes")
-
     logger.info("API startup complete")
     yield
     logger.info("API shutdown")
